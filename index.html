@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GTA V Web Edition (MVP)</title>
+  <link rel="stylesheet" href="style.css">
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "./vendor/three.module.js",
+      "three/addons/": "./vendor/three/addons/",
+      "cannon-es": "./vendor/cannon-es.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <!-- 3D WebGL Canvas Container -->
+  <div id="game-container"></div>
+
+  <!-- GTA HUD Overlay -->
+  <div id="hud-overlay">
+    <!-- Crosshair reticle (Center Screen) -->
+    <div id="crosshair"></div>
+
+    <!-- Wanted Stars (GTA Style Top Right) -->
+    <div id="wanted-stars">
+      <span class="star">★</span>
+      <span class="star">★</span>
+      <span class="star">★</span>
+      <span class="star">★</span>
+      <span class="star">★</span>
+    </div>
+
+    <!-- Weapon Selector & Ammo HUD (Top Right) -->
+    <div id="weapon-hud">
+      <div id="weapon-icon">🔫</div>
+      <div id="weapon-info">
+        <div id="weapon-name">GLOCK 19</div>
+        <div id="ammo-count">15 / 75</div>
+      </div>
+    </div>
+
+    <!-- Radio Station Toast Banner -->
+    <div id="radio-banner">📻 Radio Los Santos (Synthwave)</div>
+
+    <!-- Click hint -->
+    <div id="click-hint">🖱️ Кликните по экрану для захвата мыши (GTA камера)</div>
+
+    <!-- Controls Legend (Top Left) -->
+    <div id="controls-legend">
+      <h3>Управление</h3>
+      <div class="key-row"><span>Движение / Газ:</span> <span class="key-badge">W A S D</span></div>
+      <div class="key-row"><span>Стрельба / Удар:</span> <span class="key-badge">ЛКМ</span></div>
+      <div class="key-row"><span>Прицеливание:</span> <span class="key-badge">ПКМ</span></div>
+      <div class="key-row"><span>Оружие (1/2/3):</span> <span class="key-badge">1 2 3</span></div>
+      <div class="key-row"><span>Бег / Нитро:</span> <span class="key-badge">SHIFT</span></div>
+      <div class="key-row"><span>Прыжок / Ручник:</span> <span class="key-badge">ПРОБЕЛ</span></div>
+      <div class="key-row"><span>Сесть / Выйти:</span> <span class="key-badge">F</span></div>
+      <div class="key-row"><span>Перезарядка / Переворот:</span> <span class="key-badge">R</span></div>
+      <div class="key-row"><span>Сменить камеру:</span> <span class="key-badge">C</span></div>
+      <div class="key-row"><span>Радио:</span> <span class="key-badge">Q</span></div>
+      <div class="key-row"><span>Время суток:</span> <span class="key-badge">T</span></div>
+    </div>
+
+    <!-- Contextual Action Prompt -->
+    <div id="action-prompt">[F] СЕСТЬ В МАШИНУ</div>
+
+    <!-- Speedometer (Bottom Right) -->
+    <div id="speedometer-hud">
+      <div id="car-name">PEGASSI REAPER</div>
+      <div class="speed-display">
+        <span id="speed-value">0</span>
+        <span class="speed-unit">KM/H</span>
+      </div>
+      <div class="gear-display">ПЕРЕДАЧА: <span id="gear-value">1</span></div>
+      <div class="nitro-container">
+        <div id="nitro-bar-fill"></div>
+      </div>
+    </div>
+
+    <!-- Minimap Radar (Bottom Left) -->
+    <div id="radar-wrapper">
+      <canvas id="radar-canvas" width="160" height="160"></canvas>
+    </div>
+
+    <!-- WASTED Death Screen -->
+    <div id="wasted-screen">
+      <div id="wasted-title">WASTED</div>
+    </div>
+  </div>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>

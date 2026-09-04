@@ -1,0 +1,13 @@
+{
+  "name": "gta-v-mvp",
+  "version": "1.0.0",
+  "description": "3D GTA 5 MVP Game built with Three.js and Cannon-es",
+  "scripts": {
+    "start": "./start.sh",
+    "serve": "python3 -m http.server 8080"
+  },
+  "dependencies": {
+    "cannon-es": "^0.20.0",
+    "three": "^0.185.1"
+  }
+}
