@@ -254,7 +254,14 @@ export class Player {
 
       this.body.velocity.x = moveDir.x * speed;
       this.body.velocity.z = moveDir.z * speed;
+    } else {
+      this.body.velocity.x *= 0.25;
+      this.body.velocity.z *= 0.25;
+      this.walkCycle = 0;
+      this.footstepTimer = 0;
+    }
 
+    // Character orientation
     if (input && input.aim) {
       this.modelRoot.rotation.y = this.cameraYaw;
     } else if (isMoving) {
@@ -262,6 +269,7 @@ export class Player {
       this.modelRoot.rotation.y = targetAngle;
     }
 
+    // Footstep sounds
     if (isMoving) {
       const animSpeed = this.isSprinting ? 20 : 12;
       this.walkCycle += dt * animSpeed;
@@ -271,11 +279,6 @@ export class Player {
         this.footstepTimer = 0;
         this.sound.playFootstep(this.isSprinting);
       }
-    } else {
-      this.body.velocity.x *= 0.25;
-      this.body.velocity.z *= 0.25;
-      this.walkCycle = 0;
-      this.footstepTimer = 0;
     }
 
     // Update animations (Skeletal or Procedural fallback)
