@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
-import { CONFIG } from './config.js';
-import { Assets } from './assets.js';
+import { CONFIG } from './config.js?v=3';
+import { Assets } from './assets.js?v=3';
 
 export class Player {
   constructor(scene, physics, sound, initialPos) {
