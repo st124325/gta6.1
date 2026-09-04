@@ -8,7 +8,7 @@ export class Vehicle {
     this.scene = scene;
     this.physics = physics;
     this.sound = sound;
-    this.spec = { ...spec };
+    this.spec = Object.assign({}, spec); // shallow copy so customColor doesn't mutate config
     if (customColor) {
       this.spec.color = customColor;
     }
