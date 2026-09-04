@@ -69,6 +69,10 @@ export class WeaponSystem {
     // Bullet impact particles pool
     this.sparks = [];
     this.initSparksPool();
+
+    // Visible flying bullets / tracers pool
+    this.bullets = [];
+    this.initBulletsPool();
   }
 
   buildWeaponModels() {
@@ -159,6 +163,128 @@ export class WeaponSystem {
     }
   }
 
+  initBulletsPool() {
+    // Shared bullet geometries oriented along local Z axis so mesh.lookAt aligns with flight
+    const coreGeo = new THREE.CylinderGeometry(0.035, 0.035, 0.7, 6);
+    coreGeo.rotateX(Math.PI / 2);
+
+    const tipGeo = new THREE.SphereGeometry(0.045, 6, 6);
+
+    const tailGeo = new THREE.CylinderGeometry(0.015, 0.075, 1.4, 6);
+    tailGeo.rotateX(Math.PI / 2);
+
+    for (let i = 0; i < 35; i++) {
+      const group = new THREE.Group();
+
+      // Bright glowing bullet body
+      const coreMat = new THREE.MeshBasicMaterial({ color: 0xffea00 });
+      const coreMesh = new THREE.Mesh(coreGeo, coreMat);
+      group.add(coreMesh);
+
+      // White-hot tip
+      const tipMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+      const tipMesh = new THREE.Mesh(tipGeo, tipMat);
+      tipMesh.position.set(0, 0, 0.35);
+      group.add(tipMesh);
+
+      // Fiery glowing tracer trail behind bullet
+      const tailMat = new THREE.MeshBasicMaterial({
+        color: 0xff4400,
+        transparent: true,
+        opacity: 0.85
+      });
+      const tailMesh = new THREE.Mesh(tailGeo, tailMat);
+      tailMesh.position.set(0, 0, -0.7);
+      group.add(tailMesh);
+
+      group.visible = false;
+      this.scene.add(group);
+
+      this.bullets.push({
+        mesh: group,
+        coreMat: coreMat,
+        active: false,
+        dir: new THREE.Vector3(),
+        speed: 150,
+        dist: 0,
+        targetDist: 0,
+        hitData: null
+      });
+    }
+  }
+
+  spawnBullet(origin, targetPoint, speed, hitData, colorHex) {
+    for (let i = 0; i < this.bullets.length; i++) {
+      const b = this.bullets[i];
+      if (!b.active) {
+        b.active = true;
+        b.mesh.position.copy(origin);
+        b.mesh.visible = true;
+
+        const dir = new THREE.Vector3().subVectors(targetPoint, origin);
+        const dist = dir.length();
+        if (dist > 0.0001) {
+          dir.normalize();
+        } else {
+          dir.set(0, 0, -1);
+        }
+
+        b.dir.copy(dir);
+        b.speed = speed || 150;
+        b.dist = 0;
+        b.targetDist = Math.max(dist, 0.5);
+        b.hitData = hitData;
+
+        // Orient bullet toward destination so tracer points backwards
+        b.mesh.lookAt(targetPoint);
+
+        if (colorHex) {
+          b.coreMat.color.setHex(colorHex);
+        } else {
+          b.coreMat.color.setHex(0xffea00);
+        }
+        return b;
+      }
+    }
+    return null;
+  }
+
+  handleBulletHit(b, traffic) {
+    const data = b.hitData;
+    if (!data) return;
+
+    if (data.type === 'pedestrian' && data.ped) {
+      const ped = data.ped;
+      ped.isRagdoll = true;
+      ped.ragdollTimer = 8;
+      if (ped.body) {
+        ped.body.fixedRotation = false;
+        const imp = b.dir.clone().multiplyScalar(data.damage * 0.6);
+        imp.y += 4;
+        ped.body.velocity.copy(imp);
+      }
+      if (ped.group) ped.group.rotation.x = Math.PI / 2;
+      this.spawnHitSparks(data.point, new THREE.Vector3(0, 1, 0), 0xff2222);
+      if (traffic && traffic.triggerCrime) {
+        traffic.triggerCrime(traffic.wantedLevel + 1);
+      }
+    } else if (data.type === 'vehicle' && data.vehicle) {
+      const v = data.vehicle;
+      if (v.body && v.spec) {
+        const hitImpulse = b.dir.clone().multiplyScalar(data.damage * 12);
+        v.body.velocity.x += (hitImpulse.x / v.spec.mass) * 20;
+        v.body.velocity.z += (hitImpulse.z / v.spec.mass) * 20;
+      }
+      this.spawnHitSparks(data.point, new THREE.Vector3(0, 1, 0), 0xffcc00);
+      this.sound.playCrash(0.6);
+      if (v.spec && v.spec.type === 'police' && traffic && traffic.triggerCrime) {
+        traffic.triggerCrime(traffic.wantedLevel + 2);
+      }
+    } else if (data.type === 'ground') {
+      this.spawnHitSparks(data.point, new THREE.Vector3(0, 1, 0), 0xdde5ed);
+    }
+  }
+
   spawnHitSparks(pos, normal, color = 0xffcc33) {
     let spawned = 0;
     for (const s of this.sparks) {
@@ -210,6 +336,7 @@ export class WeaponSystem {
   }
 
   shoot(player, traffic) {
+    if (traffic) this.traffic = traffic;
     const now = performance.now() / 1000;
     if (now - this.lastShotTime < this.currentWeapon.fireRate) return;
 
@@ -241,61 +368,55 @@ export class WeaponSystem {
     const ray = this.raycaster.ray;
 
     // 1. Check Pedestrians
-    let hitSomething = false;
-    for (const ped of traffic.pedestrians) {
-      const pPos = ped.group.position;
-      // Distance from ray to pedestrian
-      const targetVec = pPos.clone().sub(ray.origin);
-      const proj = targetVec.dot(ray.direction);
+    let hitData = null;
+    let closestHitDist = this.currentWeapon.range;
 
-      if (proj > 0 && proj < this.currentWeapon.range) {
-        const closestPoint = ray.origin.clone().add(ray.direction.clone().multiplyScalar(proj));
-        const distToPed = closestPoint.distanceTo(new THREE.Vector3(pPos.x, pPos.y + 0.8, pPos.z));
+    if (traffic && traffic.pedestrians) {
+      for (let i = 0; i < traffic.pedestrians.length; i++) {
+        const ped = traffic.pedestrians[i];
+        const pPos = ped.group.position;
+        const targetVec = pPos.clone().sub(ray.origin);
+        const proj = targetVec.dot(ray.direction);
 
-        if (distToPed < 0.95) {
-          // HIT PEDESTRIAN!
-          ped.isRagdoll = true;
-          ped.ragdollTimer = 8;
-          ped.body.fixedRotation = false;
+        if (proj > 0 && proj < closestHitDist) {
+          const closestPoint = ray.origin.clone().add(ray.direction.clone().multiplyScalar(proj));
+          const distToPed = closestPoint.distanceTo(new THREE.Vector3(pPos.x, pPos.y + 0.8, pPos.z));
 
-          const imp = ray.direction.clone().multiplyScalar(this.currentWeapon.damage * 0.6);
-          imp.y += 4;
-          ped.body.velocity.copy(imp);
-          ped.group.rotation.x = Math.PI / 2;
-
-          this.spawnHitSparks(closestPoint, new THREE.Vector3(0, 1, 0), 0xff2222);
-          traffic.triggerCrime(traffic.wantedLevel + 1);
-          hitSomething = true;
-          break;
+          if (distToPed < 0.95) {
+            closestHitDist = proj;
+            hitData = {
+              type: 'pedestrian',
+              ped: ped,
+              point: closestPoint,
+              damage: this.currentWeapon.damage
+            };
+            break;
+          }
         }
       }
     }
 
     // 2. Check Vehicles
-    if (!hitSomething) {
-      for (const v of traffic.vehicles) {
+    if (traffic && traffic.vehicles) {
+      for (let i = 0; i < traffic.vehicles.length; i++) {
+        const v = traffic.vehicles[i];
         if (player.inVehicle && v === player.currentVehicle) continue;
         const vPos = v.mesh.position;
         const targetVec = vPos.clone().sub(ray.origin);
         const proj = targetVec.dot(ray.direction);
 
-        if (proj > 0 && proj < this.currentWeapon.range) {
+        if (proj > 0 && proj < closestHitDist) {
           const closestPoint = ray.origin.clone().add(ray.direction.clone().multiplyScalar(proj));
           const distToCar = closestPoint.distanceTo(new THREE.Vector3(vPos.x, vPos.y + 0.4, vPos.z));
 
           if (distToCar < 1.8) {
-            // HIT VEHICLE!
-            const hitImpulse = ray.direction.clone().multiplyScalar(this.currentWeapon.damage * 12);
-            v.body.velocity.x += hitImpulse.x / v.spec.mass * 20;
-            v.body.velocity.z += hitImpulse.z / v.spec.mass * 20;
-
-            this.spawnHitSparks(closestPoint, new THREE.Vector3(0, 1, 0), 0xffcc00);
-            this.sound.playCrash(0.6);
-
-            if (v.spec.type === 'police') {
-              traffic.triggerCrime(traffic.wantedLevel + 2);
-            }
-            hitSomething = true;
+            closestHitDist = proj;
+            hitData = {
+              type: 'vehicle',
+              vehicle: v,
+              point: closestPoint,
+              damage: this.currentWeapon.damage
+            };
             break;
           }
         }
@@ -303,16 +424,52 @@ export class WeaponSystem {
     }
 
     // 3. Ground / Wall impact
-    if (!hitSomething && !this.currentWeapon.isMelee) {
-      // Intersect ground plane
+    if (!this.currentWeapon.isMelee) {
       const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
       const groundHit = new THREE.Vector3();
       if (ray.intersectPlane(groundPlane, groundHit)) {
-        if (ray.origin.distanceTo(groundHit) < this.currentWeapon.range) {
-          this.spawnHitSparks(groundHit, new THREE.Vector3(0, 1, 0), 0xdde5ed);
+        const gDist = ray.origin.distanceTo(groundHit);
+        if (gDist < closestHitDist) {
+          closestHitDist = gDist;
+          hitData = {
+            type: 'ground',
+            point: groundHit
+          };
         }
       }
     }
+
+    // If melee (fists), resolve instantly
+    if (this.currentWeapon.isMelee) {
+      if (hitData && closestHitDist <= this.currentWeapon.range) {
+        this.handleBulletHit({ hitData: hitData, dir: ray.direction }, traffic);
+      }
+      return;
+    }
+
+    // For guns: determine target point and launch visible flying bullet!
+    let targetPoint;
+    if (hitData) {
+      targetPoint = hitData.point.clone();
+    } else {
+      targetPoint = ray.origin.clone().add(ray.direction.clone().multiplyScalar(this.currentWeapon.range));
+    }
+
+    // Muzzle origin point
+    const muzzleOrigin = new THREE.Vector3();
+    if (this.currentWeapon.id === 'PISTOL' && this.pistolMuzzle) {
+      this.pistolMuzzle.getWorldPosition(muzzleOrigin);
+    } else if (this.currentWeapon.id === 'RIFLE' && this.rifleMuzzle) {
+      this.rifleMuzzle.getWorldPosition(muzzleOrigin);
+    } else {
+      muzzleOrigin.copy(this.weaponAnchor.position);
+    }
+
+    // Speed & colors for bullet and tracer
+    const bulletSpeed = (this.currentWeapon.id === 'RIFLE') ? 170 : 130;
+    const bulletColor = (this.currentWeapon.id === 'RIFLE') ? 0xfff055 : 0xffcc22;
+
+    this.spawnBullet(muzzleOrigin, targetPoint, bulletSpeed, hitData, bulletColor);
   }
 
   flashMuzzle(muzzleNode) {
@@ -329,12 +486,34 @@ export class WeaponSystem {
 
   update(dt, player) {
     // Update sparks
-    for (const s of this.sparks) {
+    for (let i = 0; i < this.sparks.length; i++) {
+      const s = this.sparks[i];
       if (s.life > 0) {
         s.life -= dt;
         s.vel.y -= 18 * dt; // gravity
         s.mesh.position.addScaledVector(s.vel, dt);
         if (s.life <= 0) s.mesh.visible = false;
+      }
+    }
+
+    // Update flying bullets / tracers
+    for (let i = 0; i < this.bullets.length; i++) {
+      const b = this.bullets[i];
+      if (b.active) {
+        const step = b.speed * dt;
+        b.dist += step;
+        b.mesh.position.addScaledVector(b.dir, step);
+
+        if (b.dist >= b.targetDist) {
+          b.active = false;
+          b.mesh.visible = false;
+          if (b.hitData) {
+            this.handleBulletHit(b, this.traffic);
+          }
+        } else if (b.dist > 350) {
+          b.active = false;
+          b.mesh.visible = false;
+        }
       }
     }
 

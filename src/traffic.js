@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
-import { Vehicle } from './vehicle.js?v=3';
-import { CONFIG } from './config.js?v=3';
+import { Vehicle } from './vehicle.js?v=4';
+import { CONFIG } from './config.js?v=4';
 
 export class TrafficManager {
   constructor(scene, physics, sound, city) {

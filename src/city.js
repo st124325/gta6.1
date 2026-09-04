@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
-import { CONFIG } from './config.js?v=3';
+import { CONFIG } from './config.js?v=4';
 
 export class CityBuilder {
   constructor(scene, physics) {

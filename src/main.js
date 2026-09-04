@@ -1,13 +1,13 @@
 import * as THREE from 'three';
-import { CONFIG } from './config.js?v=3';
-import { PhysicsWorld } from './physics.js?v=3';
-import { SoundSystem } from './audio.js?v=3';
-import { CityBuilder } from './city.js?v=3';
-import { Player } from './player.js?v=3';
-import { TrafficManager } from './traffic.js?v=3';
-import { WeaponSystem } from './weapons.js?v=3';
-import { Minimap } from './minimap.js?v=3';
-import { UIManager } from './ui.js?v=3';
+import { CONFIG } from './config.js?v=4';
+import { PhysicsWorld } from './physics.js?v=4';
+import { SoundSystem } from './audio.js?v=4';
+import { CityBuilder } from './city.js?v=4';
+import { Player } from './player.js?v=4';
+import { TrafficManager } from './traffic.js?v=4';
+import { WeaponSystem } from './weapons.js?v=4';
+import { Minimap } from './minimap.js?v=4';
+import { UIManager } from './ui.js?v=4';
 
 class Game {
   constructor() {
