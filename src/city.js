@@ -16,8 +16,9 @@ export class CityBuilder {
     this.initTextures();
   }
 
-  // Add a car spawn, skipping if too close to an existing one
+  // Add a car spawn, skipping if too close to an existing one or cap reached
   addCarSpawn(x, y, z, rot, type) {
+    if (this.carSpawnPoints.length >= 30) return false; // hard cap – more = browser freeze
     for (const sp of this.carSpawnPoints) {
       const dx = sp.x - x;
       const dz = sp.z - z;
@@ -284,30 +285,27 @@ export class CityBuilder {
 
   buildParkingLot(cx, cz, size) {
     // Ground parking lines (dark asphalt pad)
-    const lotGeo = new THREE.PlaneGeometry(size - 4, size - 4);
-    const lotMat = new THREE.MeshStandardMaterial({ color: 0x262b30, roughness: 0.9 });
-    const lot = new THREE.Mesh(lotGeo, lotMat);
-    lot.rotation.x = -Math.PI / 2;
-    lot.position.set(cx, 0.38, cz);
-    this.scene.add(lot);
-
-    // Parking lines canvas overlay
     const lCanvas = document.createElement('canvas');
     lCanvas.width = 256; lCanvas.height = 256;
     const lCtx = lCanvas.getContext('2d');
     lCtx.fillStyle = '#262b30';
     lCtx.fillRect(0, 0, 256, 256);
-    lCtx.strokeStyle = '#ffffff88';
+    lCtx.strokeStyle = 'rgba(255,255,255,0.4)';
     lCtx.lineWidth = 4;
     for (let i = 0; i <= 4; i++) {
-      const x = i * 64;
-      lCtx.beginPath(); lCtx.moveTo(x, 0); lCtx.lineTo(x, 256); lCtx.stroke();
+      const xi = i * 64;
+      lCtx.beginPath(); lCtx.moveTo(xi, 0); lCtx.lineTo(xi, 256); lCtx.stroke();
     }
     const lineTex = new THREE.CanvasTexture(lCanvas);
     lineTex.wrapS = lineTex.wrapT = THREE.RepeatWrapping;
-    lineTex.repeat.set((size - 4) / 20, (size - 4) / 20);
-    lot.material.map = lineTex;
-    lot.material.needsUpdate = true;
+    lineTex.repeat.set(4, 4);
+
+    const lotGeo = new THREE.PlaneGeometry(size - 4, size - 4);
+    const lotMat = new THREE.MeshStandardMaterial({ color: 0x262b30, roughness: 0.9, map: lineTex });
+    const lot = new THREE.Mesh(lotGeo, lotMat);
+    lot.rotation.x = -Math.PI / 2;
+    lot.position.set(cx, 0.38, cz);
+    this.scene.add(lot);
 
     // Add parked drivable cars – 4 slots per lot using distance-checked helper
     const types = ['SUPER', 'MUSCLE', 'OFFROAD', 'POLICE'];

@@ -383,6 +383,14 @@ class Game {
   }
 }
 
+
 window.addEventListener('DOMContentLoaded', () => {
-  window.game = new Game();
+  try {
+    window.game = new Game();
+  } catch (err) {
+    console.error('Game init error:', err);
+    document.body.innerHTML += `<div style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
+      background:#c0392b;color:#fff;padding:20px;border-radius:8px;font-size:14px;z-index:9999;max-width:80%">
+      <b>❌ Game Error:</b><br>${err.message}<br><pre style="font-size:11px;margin-top:8px">${err.stack}</pre></div>`;
+  }
 });
