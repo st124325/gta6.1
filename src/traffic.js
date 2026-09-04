@@ -112,13 +112,38 @@ export class TrafficManager {
   }
 
   spawnPoliceInterceptor() {
+    if (this.policeCars.length >= 2) return; // max 2 pursuit police at once
+
+    // Find a clear spawn point ~80–150m away from origin on a road
+    let spawnPos = null;
+    const candidates = [
+      { x: 80,  y: 0.5, z: 0 },
+      { x: -80, y: 0.5, z: 0 },
+      { x: 0,   y: 0.5, z: 80 },
+      { x: 0,   y: 0.5, z: -80 },
+      { x: 80,  y: 0.5, z: 90 },
+      { x: -90, y: 0.5, z: 80 },
+      { x: 90,  y: 0.5, z: -80 },
+      { x: -80, y: 0.5, z: -90 },
+    ];
+    for (const c of candidates) {
+      let tooClose = false;
+      for (const v of this.vehicles) {
+        const dx = v.mesh.position.x - c.x;
+        const dz = v.mesh.position.z - c.z;
+        if (Math.sqrt(dx * dx + dz * dz) < 15) { tooClose = true; break; }
+      }
+      if (!tooClose) { spawnPos = c; break; }
+    }
+    if (!spawnPos) spawnPos = { x: 100, y: 0.5, z: 0 }; // fallback
+
     const policeSpec = CONFIG.VEHICLES.POLICE;
     const police = new Vehicle(
       this.scene,
       this.physics,
       this.sound,
       policeSpec,
-      { x: 30, y: 0.5, z: 30 },
+      spawnPos,
       0
     );
     this.policeCars.push(police);

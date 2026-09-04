@@ -4,11 +4,14 @@ import { CONFIG } from './config.js';
 import { Assets } from './assets.js';
 
 export class Vehicle {
-  constructor(scene, physics, sound, spec, initialPos, initialRot = 0) {
+  constructor(scene, physics, sound, spec, initialPos, initialRot = 0, customColor = null) {
     this.scene = scene;
     this.physics = physics;
     this.sound = sound;
-    this.spec = spec;
+    this.spec = { ...spec };
+    if (customColor) {
+      this.spec.color = customColor;
+    }
     this.isDriven = false;
 
     // Driving state

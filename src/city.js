@@ -11,8 +11,20 @@ export class CityBuilder {
     this.stuntRamps = [];
     this.destructibles = [];
     this.waterHydrants = [];
+    this._CAR_MIN_DIST = 14.0; // minimum metres between any two car spawns
 
     this.initTextures();
+  }
+
+  // Add a car spawn, skipping if too close to an existing one
+  addCarSpawn(x, y, z, rot, type) {
+    for (const sp of this.carSpawnPoints) {
+      const dx = sp.x - x;
+      const dz = sp.z - z;
+      if (Math.sqrt(dx * dx + dz * dz) < this._CAR_MIN_DIST) return false;
+    }
+    this.carSpawnPoints.push({ x, y, z, rot, type });
+    return true;
   }
 
   initTextures() {
@@ -212,6 +224,9 @@ export class CityBuilder {
 
     // Add Street Lights and Destructible Props
     this.addStreetProps();
+
+    // Scatter additional street-parked cars across every city block road-edge
+    this.addStreetCars();
   }
 
   buildCentralPlaza(cx, cz, size) {
@@ -260,13 +275,15 @@ export class CityBuilder {
     this.createStuntRamp(cx + 25, 0, cz, 12, 4.5, 18, Math.PI / 2);
     this.createStuntRamp(cx - 25, 0, cz, 12, 4.5, 18, -Math.PI / 2);
 
-    // Parked Supercar in the plaza
-    this.carSpawnPoints.push({ x: cx + 18, y: 0.5, z: cz - 12, rot: 0, type: 'SUPER' });
-    this.carSpawnPoints.push({ x: cx - 18, y: 0.5, z: cz + 12, rot: Math.PI, type: 'MUSCLE' });
+    // Parked cars in the plaza
+    this.addCarSpawn(cx + 18, 0.5, cz - 12, 0, 'SUPER');
+    this.addCarSpawn(cx - 18, 0.5, cz + 12, Math.PI, 'MUSCLE');
+    this.addCarSpawn(cx + 18, 0.5, cz + 12, Math.PI / 2, 'OFFROAD');
+    this.addCarSpawn(cx - 18, 0.5, cz - 12, -Math.PI / 2, 'SUPER');
   }
 
   buildParkingLot(cx, cz, size) {
-    // Ground parking lines
+    // Ground parking lines (dark asphalt pad)
     const lotGeo = new THREE.PlaneGeometry(size - 4, size - 4);
     const lotMat = new THREE.MeshStandardMaterial({ color: 0x262b30, roughness: 0.9 });
     const lot = new THREE.Mesh(lotGeo, lotMat);
@@ -274,33 +291,44 @@ export class CityBuilder {
     lot.position.set(cx, 0.38, cz);
     this.scene.add(lot);
 
-    // Add parked drivable cars
+    // Parking lines canvas overlay
+    const lCanvas = document.createElement('canvas');
+    lCanvas.width = 256; lCanvas.height = 256;
+    const lCtx = lCanvas.getContext('2d');
+    lCtx.fillStyle = '#262b30';
+    lCtx.fillRect(0, 0, 256, 256);
+    lCtx.strokeStyle = '#ffffff88';
+    lCtx.lineWidth = 4;
+    for (let i = 0; i <= 4; i++) {
+      const x = i * 64;
+      lCtx.beginPath(); lCtx.moveTo(x, 0); lCtx.lineTo(x, 256); lCtx.stroke();
+    }
+    const lineTex = new THREE.CanvasTexture(lCanvas);
+    lineTex.wrapS = lineTex.wrapT = THREE.RepeatWrapping;
+    lineTex.repeat.set((size - 4) / 20, (size - 4) / 20);
+    lot.material.map = lineTex;
+    lot.material.needsUpdate = true;
+
+    // Add parked drivable cars – 4 slots per lot using distance-checked helper
     const types = ['SUPER', 'MUSCLE', 'OFFROAD', 'POLICE'];
-    const type1 = types[Math.floor(Math.random() * types.length)];
-    const type2 = types[Math.floor(Math.random() * types.length)];
-
-    this.carSpawnPoints.push({
-      x: cx - size / 4,
-      y: 0.5,
-      z: cz - size / 4,
-      rot: 0,
-      type: type1
-    });
-
-    this.carSpawnPoints.push({
-      x: cx + size / 4,
-      y: 0.5,
-      z: cz + size / 4,
-      rot: Math.PI,
-      type: type2
-    });
+    const half = size / 4;
+    const slots = [
+      { dx: -half, dz: -half, rot: 0 },
+      { dx:  half, dz: -half, rot: 0 },
+      { dx: -half, dz:  half, rot: Math.PI },
+      { dx:  half, dz:  half, rot: Math.PI },
+    ];
+    for (let i = 0; i < slots.length; i++) {
+      const t = types[Math.floor(Math.random() * types.length)];
+      this.addCarSpawn(cx + slots[i].dx, 0.5, cz + slots[i].dz, slots[i].rot, t);
+    }
 
     // Fun launch ramp in the parking lot!
-    this.createStuntRamp(cx, 0, cz, 10, 3.8, 14, 0);
+    this.createStuntRamp(cx, 0, cz + half * 0.5, 10, 3.8, 14, 0);
 
     // Traffic cones around
     for (let c = 0; c < 5; c++) {
-      this.createTrafficCone(cx - 10 + c * 5, 0.4, cz - 15);
+      this.createTrafficCone(cx - 10 + c * 5, 0.4, cz - (size / 2) + 4);
     }
   }
 
@@ -582,6 +610,48 @@ export class CityBuilder {
       this.createFireHydrant(i + 15, 0.35, 10);
     }
   }
+
+  addStreetCars() {
+    // Place cars along curbside of every block road-edge
+    const blockSize = CONFIG.BLOCK_SIZE;
+    const roadHalf = CONFIG.ROAD_WIDTH / 2 + 2.5; // offset from road centerline to curb
+    const types = ['SUPER', 'MUSCLE', 'OFFROAD', 'MUSCLE', 'OFFROAD', 'POLICE'];
+    const numBlocks = Math.floor(CONFIG.CITY_SIZE / blockSize);
+    const halfBlocks = numBlocks / 2;
+
+    for (let bx = -halfBlocks; bx < halfBlocks; bx++) {
+      for (let bz = -halfBlocks; bz < halfBlocks; bz++) {
+        const cx = bx * blockSize + blockSize / 2;
+        const cz = bz * blockSize + blockSize / 2;
+
+        // Skip center plaza area
+        if (Math.abs(cx) < blockSize && Math.abs(cz) < blockSize) continue;
+
+        const t = () => types[Math.floor(Math.random() * types.length)];
+
+        // North curb (z = cz - blockSize/2 + roadHalf)
+        this.addCarSpawn(cx - 15, 0.5, cz - blockSize / 2 + roadHalf, 0, t());
+        this.addCarSpawn(cx,      0.5, cz - blockSize / 2 + roadHalf, 0, t());
+        this.addCarSpawn(cx + 15, 0.5, cz - blockSize / 2 + roadHalf, 0, t());
+
+        // South curb
+        this.addCarSpawn(cx - 15, 0.5, cz + blockSize / 2 - roadHalf, Math.PI, t());
+        this.addCarSpawn(cx,      0.5, cz + blockSize / 2 - roadHalf, Math.PI, t());
+        this.addCarSpawn(cx + 15, 0.5, cz + blockSize / 2 - roadHalf, Math.PI, t());
+
+        // West curb
+        this.addCarSpawn(cx - blockSize / 2 + roadHalf, 0.5, cz - 15, -Math.PI / 2, t());
+        this.addCarSpawn(cx - blockSize / 2 + roadHalf, 0.5, cz,       -Math.PI / 2, t());
+        this.addCarSpawn(cx - blockSize / 2 + roadHalf, 0.5, cz + 15,  -Math.PI / 2, t());
+
+        // East curb
+        this.addCarSpawn(cx + blockSize / 2 - roadHalf, 0.5, cz - 15,  Math.PI / 2, t());
+        this.addCarSpawn(cx + blockSize / 2 - roadHalf, 0.5, cz,        Math.PI / 2, t());
+        this.addCarSpawn(cx + blockSize / 2 - roadHalf, 0.5, cz + 15,   Math.PI / 2, t());
+      }
+    }
+  }
+
 
   createStreetLight(x, y, z) {
     const group = new THREE.Group();
