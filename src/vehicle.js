@@ -46,6 +46,11 @@ export class Vehicle {
     // Body tilt anchor
     this.bodyMeshGroup = new THREE.Group();
 
+    // Drift smoke particles pool (Neon Drift 3D mechanics)
+    this.smokeParticles = [];
+    this.smokeTimer = 0;
+    this.initSmokePool();
+
     this.initPhysics(initialPos, initialRot);
     this.initVisuals();
   }
@@ -387,7 +392,70 @@ export class Vehicle {
     this.currentSpeed = 0;
   }
 
+  initSmokePool() {
+    const smokeGeo = new THREE.SphereGeometry(0.4, 6, 6);
+    for (let i = 0; i < 30; i++) {
+      const mat = new THREE.MeshBasicMaterial({
+        color: 0xd0d0d0,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false
+      });
+      const mesh = new THREE.Mesh(smokeGeo, mat);
+      mesh.visible = false;
+      this.scene.add(mesh);
+      this.smokeParticles.push({
+        mesh: mesh,
+        age: 0,
+        life: 0.6,
+        active: false
+      });
+    }
+  }
+
+  spawnSmoke(pos) {
+    for (let i = 0; i < this.smokeParticles.length; i++) {
+      const sp = this.smokeParticles[i];
+      if (!sp.active) {
+        sp.active = true;
+        sp.age = 0;
+        sp.life = 0.5 + Math.random() * 0.25;
+        sp.mesh.position.set(
+          pos.x + (Math.random() - 0.5) * 0.4,
+          Math.max(0.18, pos.y),
+          pos.z + (Math.random() - 0.5) * 0.4
+        );
+        const s = 0.8 + Math.random() * 0.4;
+        sp.mesh.scale.set(s, s, s);
+        sp.mesh.material.opacity = 0.55;
+        sp.mesh.visible = true;
+        return;
+      }
+    }
+  }
+
+  updateSmoke(dt) {
+    for (let i = 0; i < this.smokeParticles.length; i++) {
+      const sp = this.smokeParticles[i];
+      if (sp.active) {
+        sp.age += dt;
+        if (sp.age >= sp.life) {
+          sp.active = false;
+          sp.mesh.visible = false;
+          continue;
+        }
+        const k = sp.age / sp.life;
+        sp.mesh.material.opacity = 0.55 * (1.0 - k);
+        const s = 0.8 + k * 1.6;
+        sp.mesh.scale.set(s, s, s);
+        sp.mesh.position.y += dt * 0.5;
+      }
+    }
+  }
+
   update(dt, input) {
+    this.updateSmoke(dt);
+
     this.mesh.position.copy(this.body.position);
     this.mesh.quaternion.copy(this.body.quaternion);
 
@@ -409,22 +477,12 @@ export class Vehicle {
       return;
     }
 
-    // Input processing
-    this.throttle = 0;
-    if (input.forward) this.throttle += 1;
-    if (input.backward) this.throttle -= 1;
+    // Input processing (Neon Drift 3D driving mechanics)
+    const steer = (input.left ? 1 : 0) + (input.right ? -1 : 0);
+    const speedRatio = Math.min(1.0, Math.abs(this.currentSpeed) / this.spec.maxSpeed);
 
-    this.targetSteering = 0;
-    if (input.left) this.targetSteering += this.spec.steer;
-    if (input.right) this.targetSteering -= this.spec.steer;
-
-    const speedRatio = Math.min(1.0, Math.abs(this.currentSpeed) / 35);
-    const maxSteerAngle = this.targetSteering * (1.0 - speedRatio * 0.45);
-    this.steeringAngle += (maxSteerAngle - this.steeringAngle) * dt * 9;
-
-    this.handbrake = input.handbrake;
-    this.nitro = input.nitro && this.nitroRemaining > 0 && this.throttle > 0;
-
+    // Nitro handling
+    this.nitro = input.nitro && this.nitroRemaining > 0 && input.forward;
     if (this.nitro) {
       this.nitroRemaining = Math.max(0, this.nitroRemaining - dt * 25);
     } else {
@@ -438,41 +496,54 @@ export class Vehicle {
       }
     });
 
-    let targetSpeed = 0;
-    let accelRate = this.spec.accel;
+    // Drift detection: handbrake (Space) or sharp steer under power
+    const isDrifting = (input.handbrake || this.nitro) && steer !== 0 && Math.abs(this.currentSpeed) > (this.spec.maxSpeed * 0.20);
+    const turnBoost = isDrifting ? 1.65 : 1.0;
 
-    if (this.throttle > 0) {
-      targetSpeed = this.spec.maxSpeed;
-      if (this.nitro) {
-        targetSpeed *= this.spec.nitro;
-        accelRate *= 1.8;
-      }
-    } else if (this.throttle < 0) {
+    // Steering response: responsive at low speed and high speed
+    this.targetSteering = steer * this.spec.steer;
+    this.steeringAngle += (this.targetSteering - this.steeringAngle) * dt * 10;
+
+    // Throttle / Brake / Coasting
+    const targetMax = this.spec.maxSpeed * (this.nitro ? this.spec.nitro : 1.0);
+    if (input.forward) {
+      this.braking = false;
+      const accelMult = this.nitro ? 1.75 : 1.0;
+      this.currentSpeed += this.spec.accel * accelMult * dt;
+    } else if (input.backward) {
       if (this.currentSpeed > 1.5) {
         this.braking = true;
-        accelRate = this.spec.brake;
-        targetSpeed = 0;
+        this.currentSpeed -= this.spec.brake * dt;
       } else {
         this.braking = false;
-        targetSpeed = -this.spec.reverseSpeed;
-        accelRate = this.spec.accel * 0.6;
+        this.currentSpeed -= this.spec.accel * 0.65 * dt;
       }
     } else {
       this.braking = false;
-      targetSpeed = 0;
-      accelRate = this.handbrake ? 30 : 6;
+      // Natural rolling friction / coasting
+      if (this.currentSpeed > 0) {
+        this.currentSpeed = Math.max(0, this.currentSpeed - 12 * dt);
+      } else if (this.currentSpeed < 0) {
+        this.currentSpeed = Math.min(0, this.currentSpeed + 12 * dt);
+      }
     }
 
-    if (this.currentSpeed < targetSpeed) {
-      this.currentSpeed = Math.min(targetSpeed, this.currentSpeed + accelRate * dt);
-    } else if (this.currentSpeed > targetSpeed) {
-      this.currentSpeed = Math.max(targetSpeed, this.currentSpeed - accelRate * dt);
+    // Handbrake deceleration and drift initiation
+    if (input.handbrake) {
+      if (this.currentSpeed > 0) {
+        this.currentSpeed = Math.max(0, this.currentSpeed - 20 * dt);
+      } else if (this.currentSpeed < 0) {
+        this.currentSpeed = Math.min(0, this.currentSpeed + 20 * dt);
+      }
     }
 
+    // Velocity limits
+    this.currentSpeed = Math.max(Math.min(this.currentSpeed, targetMax), -this.spec.reverseSpeed);
     this.speed = Math.abs(this.currentSpeed);
     this.speedKmh = Math.round(this.currentSpeed * 3.6);
 
-    const isBrakingOrRev = this.braking || (this.throttle < 0 && this.currentSpeed <= 0);
+    // Taillights
+    const isBrakingOrRev = this.braking || (input.backward && this.currentSpeed <= 0);
     this.taillights.forEach(t => {
       t.material.color.setHex(isBrakingOrRev ? 0xff2222 : 0x770000);
     });
@@ -485,55 +556,78 @@ export class Vehicle {
         if (this.body.velocity.y < 0) this.body.velocity.y = 0;
       }
 
-      if (this.handbrake && Math.abs(this.currentSpeed) > 5) {
-        this.driftSlip = (this.steeringAngle * this.currentSpeed) * 0.45;
-        this.sound.updateTireScreech(Math.min(1.0, Math.abs(this.driftSlip) / 6));
-      } else {
-        this.driftSlip = 0;
-        this.sound.updateTireScreech(0);
-      }
+      // Neon Drift 3D Grip and Lateral Slip physics:
+      // Desired velocity is strictly along car heading
+      const desiredVel = forward.clone().multiplyScalar(this.currentSpeed);
 
-      this.body.velocity.x = forward.x * this.currentSpeed + right.x * this.driftSlip;
-      this.body.velocity.z = forward.z * this.currentSpeed + right.z * this.driftSlip;
+      // In drift mode grip drops dramatically -> car slides sideways by inertia!
+      const baseGrip = this.spec.grip || 0.18;
+      const effGrip = isDrifting ? (baseGrip * 0.28) : baseGrip;
+      const gripAlpha = Math.min(1.0, effGrip * 60 * dt);
 
-      if (Math.abs(this.currentSpeed) > 0.3) {
-        const steerDir = this.currentSpeed > 0 ? 1 : -1;
-        const driftFactor = this.handbrake ? 2.5 : 1.4;
-        this.body.angularVelocity.y = this.steeringAngle * steerDir * driftFactor;
+      // Interpolate horizontal velocity to desired heading velocity
+      const curVel = new THREE.Vector3(this.body.velocity.x, 0, this.body.velocity.z);
+      curVel.lerp(desiredVel, gripAlpha);
+
+      this.body.velocity.x = curVel.x;
+      this.body.velocity.z = curVel.z;
+
+      // Angular velocity heading rotation (turns effectively at all speeds)
+      if (Math.abs(this.currentSpeed) > 0.2 || steer !== 0) {
+        const dirSign = this.currentSpeed >= -0.5 ? 1 : -1;
+        const steerRate = 2.8 * (0.60 + 0.40 * speedRatio) * turnBoost;
+        this.body.angularVelocity.y = steer * steerRate * dirSign;
       } else {
         this.body.angularVelocity.y = 0;
       }
 
-      this.body.angularVelocity.x *= 0.85;
-      this.body.angularVelocity.z *= 0.85;
+      // Damping pitch and roll to keep car stable on the road
+      this.body.angularVelocity.x *= 0.82;
+      this.body.angularVelocity.z *= 0.82;
+
+      // Drift smoke & tire screech sound
+      if (isDrifting && Math.abs(this.currentSpeed) > 5) {
+        this.sound.updateTireScreech(Math.min(1.0, 0.45 + speedRatio * 0.55));
+        this.smokeTimer -= dt;
+        if (this.smokeTimer <= 0) {
+          this.smokeTimer = 0.05;
+          const wL = new THREE.Vector3(-0.95, -0.22, -1.35).applyQuaternion(this.mesh.quaternion).add(this.mesh.position);
+          const wR = new THREE.Vector3(0.95, -0.22, -1.35).applyQuaternion(this.mesh.quaternion).add(this.mesh.position);
+          this.spawnSmoke(wL);
+          this.spawnSmoke(wR);
+        }
+      } else {
+        this.sound.updateTireScreech(0);
+      }
     } else {
       this.sound.updateTireScreech(0);
-
-      // Mid-air stunt flip controls
+      // Mid-air stunt controls
       if (input.forward) this.body.angularVelocity.x = -1.2;
       if (input.backward) this.body.angularVelocity.x = 1.2;
       if (input.left) this.body.angularVelocity.z = 1.2;
       if (input.right) this.body.angularVelocity.z = -1.2;
     }
 
-    const accelPitch = (this.throttle > 0 ? -0.04 : 0) + (this.braking ? 0.07 : 0);
-    const turnRoll = -this.steeringAngle * Math.min(1, Math.abs(this.currentSpeed) / 25) * 0.12;
+    // Dynamic body tilt (roll in corners, pitch on accel/brake)
+    const accelPitch = (input.forward ? -0.04 : 0) + (this.braking ? 0.07 : 0);
+    const turnRoll = -this.steeringAngle * speedRatio * 0.12;
     this.bodyMeshGroup.rotation.x = accelPitch;
     this.bodyMeshGroup.rotation.z = turnRoll;
 
     // Rotate wheels
     this.wheelRotation += (this.currentSpeed * dt) / 0.40;
 
-    // Ferrari GLTF wheels and steering
+    // Ferrari GLTF wheels and steering wheel
     if (this.ferrariLoaded) {
-      for (const fw of this.ferrariWheels) {
-        fw.rotation.x = -Math.PI / 2 + this.wheelRotation;
+      for (let i = 0; i < this.ferrariWheels.length; i++) {
+        this.ferrariWheels[i].rotation.x = -Math.PI / 2 + this.wheelRotation;
       }
       if (this.steeringWheelMesh) {
         this.steeringWheelMesh.rotation.z = this.steeringAngle * 2.5;
       }
     } else {
-      for (const w of this.wheels) {
+      for (let i = 0; i < this.wheels.length; i++) {
+        const w = this.wheels[i];
         w.mesh.rotation.x = this.wheelRotation;
         if (w.isFront) {
           w.group.rotation.y = this.steeringAngle;
@@ -541,7 +635,7 @@ export class Vehicle {
       }
     }
 
-    this.sound.updateEngine(this.speedKmh, this.throttle, this.nitro);
+    this.sound.updateEngine(this.speedKmh, input.forward ? 1 : (input.backward ? -1 : 0), this.nitro);
 
     if (input.horn !== this.hornActive) {
       this.hornActive = input.horn;

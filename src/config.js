@@ -22,10 +22,11 @@ export const CONFIG = {
       name: 'Ferrari 458 Italia (Суперкар)',
       mass: 1250,
       maxSpeed: 58, // ~210 km/h
-      accel: 34,
-      brake: 48,
-      reverseSpeed: 20,
-      steer: 0.68,
+      accel: 36,
+      brake: 52,
+      reverseSpeed: 22,
+      steer: 0.72,
+      grip: 0.20,
       nitro: 1.70,
       color: 0xe60000, // Ferrari Corsa Red
       type: 'super',
@@ -35,11 +36,12 @@ export const CONFIG = {
       id: 'muscle',
       name: 'Vapid Dominator (Маслкар)',
       mass: 1550,
-      maxSpeed: 48, // ~175 km/h
-      accel: 28,
-      brake: 42,
-      reverseSpeed: 16,
-      steer: 0.62,
+      maxSpeed: 50, // ~180 km/h
+      accel: 30,
+      brake: 45,
+      reverseSpeed: 18,
+      steer: 0.65,
+      grip: 0.16,
       nitro: 1.75,
       color: 0x1c58c2,
       type: 'muscle'
@@ -48,11 +50,12 @@ export const CONFIG = {
       id: 'offroad',
       name: 'Canis Kamacho 4x4 (Внедорожник)',
       mass: 1900,
-      maxSpeed: 42, // ~150 km/h
-      accel: 24,
-      brake: 40,
-      reverseSpeed: 15,
+      maxSpeed: 44, // ~158 km/h
+      accel: 26,
+      brake: 42,
+      reverseSpeed: 16,
       steer: 0.70,
+      grip: 0.18,
       nitro: 1.55,
       color: 0x3d7037,
       type: 'offroad'
@@ -61,11 +64,12 @@ export const CONFIG = {
       id: 'police',
       name: 'Police Interceptor (Полиция)',
       mass: 1600,
-      maxSpeed: 52, // ~190 km/h
-      accel: 30,
-      brake: 46,
-      reverseSpeed: 18,
-      steer: 0.65,
+      maxSpeed: 54, // ~195 km/h
+      accel: 32,
+      brake: 48,
+      reverseSpeed: 20,
+      steer: 0.68,
+      grip: 0.19,
       nitro: 1.65,
       color: 0x111111,
       type: 'police'
